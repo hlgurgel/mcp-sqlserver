@@ -1,0 +1,13 @@
+[project]
+name = "mcp-sqlserver"
+version = "0.1.0"
+description = "Servidor MCP para SQL Server com controle de permissões e modo somente-leitura"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "pyodbc>=5.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+mcp-sqlserver = "mcp_sqlserver.server:main"
