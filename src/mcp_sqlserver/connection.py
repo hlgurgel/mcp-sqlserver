@@ -1,8 +1,18 @@
 import os
+from pathlib import Path
 import pyodbc
 from dotenv import load_dotenv
 
-load_dotenv()
+_RAIZ_MCP = Path(__file__).resolve().parent.parent.parent
+_caminhos_env = [
+    _RAIZ_MCP / ".env",
+    Path.cwd() / ".." / ".env",
+    Path.cwd() / ".env",
+]
+for _caminho in _caminhos_env:
+    if _caminho.exists():
+        load_dotenv(_caminho)
+        break
 
 _CONNECTION_STRING = os.getenv("MSSQL_CONNECTION_STRING", "")
 _CONNECTION = None

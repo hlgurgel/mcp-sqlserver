@@ -1,7 +1,19 @@
 import json
-from .connection import get_connection
+from .connection import get_connection, get_connection_string
 
 MAX_ROWS = 2000
+
+_BANCO_PADRAO = "master"
+_conn_str = get_connection_string()
+for _parte in _conn_str.split(";"):
+    if _parte.strip().upper().startswith("DATABASE="):
+        _BANCO_PADRAO = _parte.split("=", 1)[1].strip()
+        break
+
+
+def _definir_banco(cursor, banco=None):
+    banco_alvo = banco if banco else _BANCO_PADRAO
+    cursor.execute(f"USE [{banco_alvo}]")
 
 
 def _format_resultado(cursor) -> str:
@@ -10,14 +22,32 @@ def _format_resultado(cursor) -> str:
     return json.dumps(linhas, default=str, ensure_ascii=False, indent=2)
 
 
+def listar_bancos() -> str:
+    """Lista todos os bancos de dados acessiveis no servidor."""
+    sql = """
+        SELECT name, state_desc, create_date, compatibility_level
+        FROM sys.databases
+        ORDER BY name
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(sql)
+        return _format_resultado(cursor)
+    except Exception as e:
+        return f"ERRO: {str(e)}"
+    finally:
+        cursor.close()
+
+
 def consulta(sql: str) -> str:
     """Executa uma consulta SELECT (somente leitura).
 
+    Use notacao de tres niveis para acessar outros bancos:
+    banco.esquema.tabela
+
     Args:
         sql: Query SQL do tipo SELECT.
-
-    Returns:
-        Resultado em formato JSON.
     """
     sql_upper = sql.strip().upper()
     palavras_proibidas = [
@@ -40,8 +70,13 @@ def consulta(sql: str) -> str:
         cursor.close()
 
 
-def listar_tabelas() -> str:
-    """Lista todas as tabelas do banco de dados."""
+def listar_tabelas(banco: str = "") -> str:
+    """Lista todas as tabelas e views do banco de dados.
+
+    Args:
+        banco: Nome do banco de dados (opcional). Se nao informado,
+               usa o banco padrao da conexao.
+    """
     sql = """
         SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
         FROM INFORMATION_SCHEMA.TABLES
@@ -50,6 +85,7 @@ def listar_tabelas() -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql)
         return _format_resultado(cursor)
     except Exception as e:
@@ -58,11 +94,12 @@ def listar_tabelas() -> str:
         cursor.close()
 
 
-def descrever_tabela(tabela: str) -> str:
+def descrever_tabela(tabela: str, banco: str = "") -> str:
     """Descreve a estrutura de uma tabela: colunas, tipos, nulabilidade e chaves.
 
     Args:
-        tabela: Nome da tabela (pode incluir schema: 'dbo.MinhaTabela').
+        tabela: Nome da tabela. Use 'schema.nome' ou apenas 'nome' (default: dbo).
+        banco: Nome do banco de dados (opcional).
     """
     schema = "dbo"
     nome_tabela = tabela
@@ -95,6 +132,7 @@ def descrever_tabela(tabela: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql, (schema, nome_tabela))
         resultado = _format_resultado(cursor)
         if resultado == "[]":
@@ -106,11 +144,12 @@ def descrever_tabela(tabela: str) -> str:
         cursor.close()
 
 
-def listar_indices(tabela: str) -> str:
+def listar_indices(tabela: str, banco: str = "") -> str:
     """Lista todos os indices de uma tabela.
 
     Args:
-        tabela: Nome da tabela (pode incluir schema).
+        tabela: Nome da tabela. Use 'schema.nome' ou apenas 'nome'.
+        banco: Nome do banco de dados (opcional).
     """
     schema = "dbo"
     nome_tabela = tabela
@@ -137,6 +176,7 @@ def listar_indices(tabela: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql, (schema, nome_tabela))
         return _format_resultado(cursor)
     except Exception as e:
@@ -145,8 +185,12 @@ def listar_indices(tabela: str) -> str:
         cursor.close()
 
 
-def listar_procedures() -> str:
-    """Lista todas as stored procedures do banco."""
+def listar_procedures(banco: str = "") -> str:
+    """Lista todas as stored procedures do banco.
+
+    Args:
+        banco: Nome do banco de dados (opcional).
+    """
     sql = """
         SELECT
             s.name AS SCHEMA_NAME,
@@ -160,6 +204,7 @@ def listar_procedures() -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql)
         return _format_resultado(cursor)
     except Exception as e:
@@ -168,11 +213,12 @@ def listar_procedures() -> str:
         cursor.close()
 
 
-def ler_procedure(nome: str) -> str:
+def ler_procedure(nome: str, banco: str = "") -> str:
     """Retorna o codigo-fonte de uma stored procedure.
 
     Args:
-        nome: Nome da procedure (pode incluir schema: 'dbo.MinhaProc').
+        nome: Nome da procedure. Use 'schema.nome' ou apenas 'nome'.
+        banco: Nome do banco de dados (opcional).
     """
     schema = "dbo"
     nome_proc = nome
@@ -185,6 +231,7 @@ def ler_procedure(nome: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql, (schema, nome_proc))
         row = cursor.fetchone()
         if row is None or row[0] is None:
@@ -196,7 +243,7 @@ def ler_procedure(nome: str) -> str:
         cursor.close()
 
 
-def executar_procedure(nome: str, parametros: str = "") -> str:
+def executar_procedure(nome: str, banco: str = "", parametros: str = "") -> str:
     """Executa uma stored procedure. Requer confirmacao explicita do usuario.
 
     IMPORTANTE: O usuario deve ser questionado antes de executar qualquer procedure.
@@ -204,8 +251,9 @@ def executar_procedure(nome: str, parametros: str = "") -> str:
     sem alerta adicional.
 
     Args:
-        nome: Nome da procedure (pode incluir schema: 'dbo.MinhaProc').
-        parametros: Parametros da procedure no formato 'valor1, valor2, ...'.
+        nome: Nome da procedure. Use 'schema.nome' ou apenas 'nome'.
+        banco: Nome do banco de dados (opcional).
+        parametros: Parametros no formato SQL: 'valor1, valor2, @param=valor'.
     """
     if parametros:
         sql = f"EXEC {nome} {parametros}"
@@ -215,6 +263,8 @@ def executar_procedure(nome: str, parametros: str = "") -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        if banco:
+            _definir_banco(cursor, banco)
         cursor.execute(sql)
         if cursor.description:
             return "RESULTADO:\n" + _format_resultado(cursor)
@@ -228,10 +278,10 @@ def executar_procedure(nome: str, parametros: str = "") -> str:
 
 
 def plano_execucao(sql: str) -> str:
-    """Exibe o plano de execucao estimado para uma query (sem executa-la).
+    """Exibe o plano de execucao estimado para uma query, sem executa-la.
 
     Args:
-        sql: Query SQL para analise.
+        sql: Query SQL para analisar o plano de execucao.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -253,11 +303,12 @@ def plano_execucao(sql: str) -> str:
         cursor.close()
 
 
-def listar_constraints(tabela: str) -> str:
-    """Lista todas as constraints de uma tabela.
+def listar_constraints(tabela: str, banco: str = "") -> str:
+    """Lista todas as constraints de uma tabela (PK, FK, UNIQUE, CHECK, DEFAULT).
 
     Args:
-        tabela: Nome da tabela (pode incluir schema).
+        tabela: Nome da tabela. Use 'schema.nome' ou apenas 'nome'.
+        banco: Nome do banco de dados (opcional).
     """
     schema = "dbo"
     nome_tabela = tabela
@@ -288,6 +339,7 @@ def listar_constraints(tabela: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql, (schema, nome_tabela))
         return _format_resultado(cursor)
     except Exception as e:
@@ -296,11 +348,13 @@ def listar_constraints(tabela: str) -> str:
         cursor.close()
 
 
-def estatisticas_tabela(tabela: str) -> str:
-    """Exibe estatisticas de uma tabela: numero de linhas, tamanho, uso de indice.
+def estatisticas_tabela(tabela: str, banco: str = "") -> str:
+    """Exibe estatisticas de uma tabela: numero estimado de linhas,
+    tamanho em disco e uso de dados.
 
     Args:
-        tabela: Nome da tabela (pode incluir schema).
+        tabela: Nome da tabela. Use 'schema.nome' ou apenas 'nome'.
+        banco: Nome do banco de dados (opcional).
     """
     schema = "dbo"
     nome_tabela = tabela
@@ -325,6 +379,7 @@ def estatisticas_tabela(tabela: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql, (schema, nome_tabela))
         return _format_resultado(cursor)
     except Exception as e:
@@ -333,8 +388,12 @@ def estatisticas_tabela(tabela: str) -> str:
         cursor.close()
 
 
-def listar_funcoes() -> str:
-    """Lista todas as funcoes (scalar e table-valued) do banco."""
+def listar_funcoes(banco: str = "") -> str:
+    """Lista todas as funcoes (scalar e table-valued) do banco.
+
+    Args:
+        banco: Nome do banco de dados (opcional).
+    """
     sql = """
         SELECT
             s.name AS SCHEMA_NAME,
@@ -350,6 +409,7 @@ def listar_funcoes() -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql)
         return _format_resultado(cursor)
     except Exception as e:
@@ -358,11 +418,12 @@ def listar_funcoes() -> str:
         cursor.close()
 
 
-def ler_funcao(nome: str) -> str:
+def ler_funcao(nome: str, banco: str = "") -> str:
     """Retorna o codigo-fonte de uma funcao.
 
     Args:
-        nome: Nome da funcao (pode incluir schema).
+        nome: Nome da funcao. Use 'schema.nome' ou apenas 'nome'.
+        banco: Nome do banco de dados (opcional).
     """
     schema = "dbo"
     nome_func = nome
@@ -375,6 +436,7 @@ def ler_funcao(nome: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     try:
+        _definir_banco(cursor, banco)
         cursor.execute(sql, (schema, nome_func))
         row = cursor.fetchone()
         if row is None or row[0] is None:

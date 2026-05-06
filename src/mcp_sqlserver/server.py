@@ -18,6 +18,8 @@ async def listar_ferramentas():
         {
             "name": "consulta",
             "description": "Executa uma consulta SELECT (somente leitura) no SQL Server. "
+                           "Use notacao de tres niveis para acessar outros bancos: "
+                           "banco.esquema.tabela. "
                            "Operacoes DDL/DML (INSERT, UPDATE, DELETE, DROP, etc.) sao bloqueadas.",
             "inputSchema": {
                 "type": "object",
@@ -31,11 +33,26 @@ async def listar_ferramentas():
             },
         },
         {
-            "name": "listar_tabelas",
-            "description": "Lista todas as tabelas e views do banco de dados.",
+            "name": "listar_bancos",
+            "description": "Lista todos os bancos de dados acessiveis no servidor.",
             "inputSchema": {
                 "type": "object",
                 "properties": {},
+            },
+        },
+        {
+            "name": "listar_tabelas",
+            "description": "Lista todas as tabelas e views de um banco de dados.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional). "
+                                       "Se nao informado, usa o banco padrao da conexao.",
+                        "default": "",
+                    },
+                },
             },
         },
         {
@@ -48,6 +65,11 @@ async def listar_ferramentas():
                     "tabela": {
                         "type": "string",
                         "description": "Nome da tabela. Use 'schema.nome' ou apenas 'nome' (default: dbo).",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
                     },
                 },
                 "required": ["tabela"],
@@ -63,16 +85,27 @@ async def listar_ferramentas():
                         "type": "string",
                         "description": "Nome da tabela. Use 'schema.nome' ou apenas 'nome'.",
                     },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
                 },
                 "required": ["tabela"],
             },
         },
         {
             "name": "listar_procedures",
-            "description": "Lista todas as stored procedures do banco de dados.",
+            "description": "Lista todas as stored procedures de um banco de dados.",
             "inputSchema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
+                },
             },
         },
         {
@@ -84,6 +117,11 @@ async def listar_ferramentas():
                     "nome": {
                         "type": "string",
                         "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
                     },
                 },
                 "required": ["nome"],
@@ -100,6 +138,11 @@ async def listar_ferramentas():
                     "nome": {
                         "type": "string",
                         "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
                     },
                     "parametros": {
                         "type": "string",
@@ -135,6 +178,11 @@ async def listar_ferramentas():
                         "type": "string",
                         "description": "Nome da tabela. Use 'schema.nome' ou apenas 'nome'.",
                     },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
                 },
                 "required": ["tabela"],
             },
@@ -150,16 +198,27 @@ async def listar_ferramentas():
                         "type": "string",
                         "description": "Nome da tabela. Use 'schema.nome' ou apenas 'nome'.",
                     },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
                 },
                 "required": ["tabela"],
             },
         },
         {
             "name": "listar_funcoes",
-            "description": "Lista todas as funcoes (scalar e table-valued) do banco de dados.",
+            "description": "Lista todas as funcoes (scalar e table-valued) de um banco de dados.",
             "inputSchema": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
+                },
             },
         },
         {
@@ -171,6 +230,11 @@ async def listar_ferramentas():
                     "nome": {
                         "type": "string",
                         "description": "Nome da funcao. Use 'schema.nome' ou apenas 'nome'.",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
                     },
                 },
                 "required": ["nome"],
@@ -185,6 +249,7 @@ async def chamar_ferramenta(name: str, arguments: dict):
 
     mapeamento = {
         "consulta": tools.consulta,
+        "listar_bancos": tools.listar_bancos,
         "listar_tabelas": tools.listar_tabelas,
         "descrever_tabela": tools.descrever_tabela,
         "listar_indices": tools.listar_indices,
