@@ -2,6 +2,7 @@ import sys
 import logging
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.types import Tool
 
 from . import tools
 from .connection import close_connection
@@ -15,13 +16,13 @@ servidor = Server("mcp-sqlserver")
 @servidor.list_tools()
 async def listar_ferramentas():
     return [
-        {
-            "name": "consulta",
-            "description": "Executa uma consulta SELECT (somente leitura) no SQL Server. "
-                           "Use notacao de tres niveis para acessar outros bancos: "
-                           "banco.esquema.tabela. "
-                           "Operacoes DDL/DML (INSERT, UPDATE, DELETE, DROP, etc.) sao bloqueadas.",
-            "inputSchema": {
+        Tool(
+            name="consulta",
+            description="Executa uma consulta SELECT (somente leitura) no SQL Server. "
+                        "Use notacao de tres niveis para acessar outros bancos: "
+                        "banco.esquema.tabela. "
+                        "Operacoes DDL/DML (INSERT, UPDATE, DELETE, DROP, etc.) sao bloqueadas.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "sql": {
@@ -31,19 +32,19 @@ async def listar_ferramentas():
                 },
                 "required": ["sql"],
             },
-        },
-        {
-            "name": "listar_bancos",
-            "description": "Lista todos os bancos de dados acessiveis no servidor.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="listar_bancos",
+            description="Lista todos os bancos de dados acessiveis no servidor.",
+            inputSchema={
                 "type": "object",
                 "properties": {},
             },
-        },
-        {
-            "name": "listar_tabelas",
-            "description": "Lista todas as tabelas e views de um banco de dados.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="listar_tabelas",
+            description="Lista todas as tabelas e views de um banco de dados.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "banco": {
@@ -54,12 +55,12 @@ async def listar_ferramentas():
                     },
                 },
             },
-        },
-        {
-            "name": "descrever_tabela",
-            "description": "Descreve a estrutura de uma tabela: colunas, tipos, "
-                           "nulabilidade e chave primaria.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="descrever_tabela",
+            description="Descreve a estrutura de uma tabela: colunas, tipos, "
+                        "nulabilidade e chave primaria.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "tabela": {
@@ -74,11 +75,11 @@ async def listar_ferramentas():
                 },
                 "required": ["tabela"],
             },
-        },
-        {
-            "name": "listar_indices",
-            "description": "Lista todos os indices de uma tabela especifica.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="listar_indices",
+            description="Lista todos os indices de uma tabela especifica.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "tabela": {
@@ -93,11 +94,11 @@ async def listar_ferramentas():
                 },
                 "required": ["tabela"],
             },
-        },
-        {
-            "name": "listar_procedures",
-            "description": "Lista todas as stored procedures de um banco de dados.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="listar_procedures",
+            description="Lista todas as stored procedures de um banco de dados.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "banco": {
@@ -107,11 +108,11 @@ async def listar_ferramentas():
                     },
                 },
             },
-        },
-        {
-            "name": "ler_procedure",
-            "description": "Retorna o codigo-fonte completo de uma stored procedure.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="ler_procedure",
+            description="Retorna o codigo-fonte completo de uma stored procedure.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "nome": {
@@ -126,13 +127,13 @@ async def listar_ferramentas():
                 },
                 "required": ["nome"],
             },
-        },
-        {
-            "name": "executar_procedure",
-            "description": "Executa uma stored procedure. "
-                           "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
-                           "Nunca execute procedures sem permissao explicita.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="executar_procedure",
+            description="Executa uma stored procedure. "
+                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                        "Nunca execute procedures sem permissao explicita.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "nome": {
@@ -152,12 +153,12 @@ async def listar_ferramentas():
                 },
                 "required": ["nome"],
             },
-        },
-        {
-            "name": "plano_execucao",
-            "description": "Exibe o plano de execucao estimado para uma query, sem executa-la. "
-                           "Util para analisar performance.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="plano_execucao",
+            description="Exibe o plano de execucao estimado para uma query, sem executa-la. "
+                        "Util para analisar performance.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "sql": {
@@ -167,11 +168,11 @@ async def listar_ferramentas():
                 },
                 "required": ["sql"],
             },
-        },
-        {
-            "name": "listar_constraints",
-            "description": "Lista todas as constraints de uma tabela (PK, FK, UNIQUE, CHECK, DEFAULT).",
-            "inputSchema": {
+        ),
+        Tool(
+            name="listar_constraints",
+            description="Lista todas as constraints de uma tabela (PK, FK, UNIQUE, CHECK, DEFAULT).",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "tabela": {
@@ -186,12 +187,12 @@ async def listar_ferramentas():
                 },
                 "required": ["tabela"],
             },
-        },
-        {
-            "name": "estatisticas_tabela",
-            "description": "Exibe estatisticas de uma tabela: numero estimado de linhas, "
-                           "tamanho em disco e uso de dados.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="estatisticas_tabela",
+            description="Exibe estatisticas de uma tabela: numero estimado de linhas, "
+                        "tamanho em disco e uso de dados.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "tabela": {
@@ -206,11 +207,11 @@ async def listar_ferramentas():
                 },
                 "required": ["tabela"],
             },
-        },
-        {
-            "name": "listar_funcoes",
-            "description": "Lista todas as funcoes (scalar e table-valued) de um banco de dados.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="listar_funcoes",
+            description="Lista todas as funcoes (scalar e table-valued) de um banco de dados.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "banco": {
@@ -220,11 +221,11 @@ async def listar_ferramentas():
                     },
                 },
             },
-        },
-        {
-            "name": "ler_funcao",
-            "description": "Retorna o codigo-fonte completo de uma funcao.",
-            "inputSchema": {
+        ),
+        Tool(
+            name="ler_funcao",
+            description="Retorna o codigo-fonte completo de uma funcao.",
+            inputSchema={
                 "type": "object",
                 "properties": {
                     "nome": {
@@ -239,7 +240,41 @@ async def listar_ferramentas():
                 },
                 "required": ["nome"],
             },
-        },
+        ),
+        Tool(
+            name="status_jobs",
+            description="Retorna o status da ultima execucao de jobs do SQL Server Agent. "
+                        "Recebe uma lista de nomes de jobs separados por virgula e retorna "
+                        "inicio, fim, duracao, resultado e mensagem de cada job.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nomes": {
+                        "type": "string",
+                        "description": "Nomes dos jobs separados por virgula. "
+                                       "Exemplo: 'Job A, Job B, Job C'",
+                    },
+                },
+                "required": ["nomes"],
+            },
+        ),
+        Tool(
+            name="executar_update",
+            description="Executa um comando UPDATE no SQL Server. "
+                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                        "Nunca execute updates sem permissao explicita. "
+                        "A clausula WHERE e obrigatoria para evitar alteracoes em massa.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {
+                        "type": "string",
+                        "description": "Comando SQL UPDATE completo. Deve incluir clausula WHERE.",
+                    },
+                },
+                "required": ["sql"],
+            },
+        ),
     ]
 
 
@@ -261,6 +296,8 @@ async def chamar_ferramenta(name: str, arguments: dict):
         "estatisticas_tabela": tools.estatisticas_tabela,
         "listar_funcoes": tools.listar_funcoes,
         "ler_funcao": tools.ler_funcao,
+        "status_jobs": tools.status_jobs,
+        "executar_update": tools.executar_update,
     }
 
     func = mapeamento.get(name)
