@@ -571,6 +571,105 @@ def ler_funcao(nome: str, banco: str = "") -> str:
         cursor.close()
 
 
+def alterar_procedure(nome: str, script: str, backup_arquivo: str, banco: str = "") -> str:
+    """Altera uma stored procedure com backup previo do codigo original.
+
+    ATENCAO: O usuario DEVE ser questionado e confirmar antes de cada execucao.
+    Nunca execute ALTER PROCEDURE sem permissao explicita.
+
+    Fluxo:
+    1. Le o codigo-fonte atual da procedure
+    2. Salva o backup em 'backup_arquivo'
+    3. Verifica se o backup foi salvo corretamente
+    4. Executa o ALTER PROCEDURE
+    5. Retorna status da operacao
+
+    Args:
+        nome: Nome da procedure. Use 'schema.nome' ou apenas 'nome'.
+        script: Script ALTER PROCEDURE completo.
+        backup_arquivo: Caminho absoluto do arquivo onde sera salvo o backup.
+        banco: Nome do banco de dados (opcional).
+    """
+    import os as _os
+    from datetime import datetime as _dt
+
+    schema = "dbo"
+    nome_proc = nome
+    if "." in nome:
+        schema, nome_proc = nome.split(".", 1)
+
+    # 1. Valida identificador
+    if not _validar_identificador_sql(nome):
+        return "OPERACAO BLOQUEADA: Nome de procedure invalido."
+
+    # 2. Le codigo atual
+    sql_ler = """
+        SELECT OBJECT_DEFINITION(OBJECT_ID(? + '.' + ?)) AS CODIGO_FONTE
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        _definir_banco(cursor, banco)
+        cursor.execute(sql_ler, (schema, nome_proc))
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            return f"ERRO: Procedure '{nome}' nao encontrada. Backup abortado."
+        codigo_original = row[0]
+    except Exception as e:
+        return f"ERRO ao ler procedure para backup: {str(e)}"
+    finally:
+        cursor.close()
+
+    # 3. Salva backup
+    try:
+        _os.makedirs(_os.path.dirname(backup_arquivo), exist_ok=True)
+        with open(backup_arquivo, "w", encoding="utf-8") as f:
+            f.write(f"-- Backup automatico de {schema}.{nome_proc}\n")
+            f.write(f"-- Data: {_dt.now().isoformat()}\n")
+            f.write(f"-- Banco: {banco or _BANCO_PADRAO}\n")
+            f.write("-- ============================================================\n\n")
+            f.write(codigo_original)
+    except Exception as e:
+        return f"ERRO ao salvar backup em '{backup_arquivo}': {str(e)}"
+
+    # 4. Verifica backup
+    try:
+        with open(backup_arquivo, "r", encoding="utf-8") as f:
+            conteudo_backup = f.read()
+        if codigo_original not in conteudo_backup:
+            return f"ERRO: Verificacao de backup falhou. O arquivo '{backup_arquivo}' nao contem o codigo original."
+    except Exception as e:
+        return f"ERRO ao verificar backup: {str(e)}"
+
+    # 5. Valida script ALTER
+    script_upper = script.strip().upper()
+    if not script_upper.startswith("ALTER PROCEDURE") and not script_upper.startswith("ALTER PROC"):
+        return "OPERACAO BLOQUEADA: O script deve comecar com ALTER PROCEDURE."
+
+    if ";" in script[:-1]:  # permite ; no final
+        return "OPERACAO BLOQUEADA: Comandos encadeados (;) nao sao permitidos no script."
+
+    # 6. Executa ALTER
+    cursor = conn.cursor()
+    try:
+        _definir_banco(cursor, banco)
+        cursor.execute(script)
+        conn.commit()
+        return (
+            f"SUCESSO: Procedure '{schema}.{nome_proc}' alterada com sucesso.\n"
+            f"Backup salvo em: {backup_arquivo} "
+            f"({len(codigo_original)} caracteres)"
+        )
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return f"ERRO ao executar ALTER: {str(e)}\n\nBackup salvo em: {backup_arquivo} (use para restaurar)"
+    finally:
+        cursor.close()
+
+
 def executar_update(sql: str) -> str:
     """Executa um comando UPDATE no SQL Server.
 

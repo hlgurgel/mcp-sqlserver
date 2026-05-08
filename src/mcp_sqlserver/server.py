@@ -275,6 +275,37 @@ async def listar_ferramentas():
                 "required": ["sql"],
             },
         ),
+        Tool(
+            name="alterar_procedure",
+            description="Altera uma stored procedure com backup previo do codigo original. "
+                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                        "Nunca altere procedures sem permissao explicita. "
+                        "Fluxo: 1) le o codigo atual, 2) salva backup no arquivo indicado, "
+                        "3) verifica o backup, 4) executa o ALTER PROCEDURE.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "nome": {
+                        "type": "string",
+                        "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
+                    },
+                    "script": {
+                        "type": "string",
+                        "description": "Script ALTER PROCEDURE completo.",
+                    },
+                    "backup_arquivo": {
+                        "type": "string",
+                        "description": "Caminho absoluto do arquivo onde sera salvo o backup do codigo original.",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
+                },
+                "required": ["nome", "script", "backup_arquivo"],
+            },
+        ),
     ]
 
 
@@ -298,6 +329,7 @@ async def chamar_ferramenta(name: str, arguments: dict):
         "ler_funcao": tools.ler_funcao,
         "status_jobs": tools.status_jobs,
         "executar_update": tools.executar_update,
+        "alterar_procedure": tools.alterar_procedure,
     }
 
     func = mapeamento.get(name)
