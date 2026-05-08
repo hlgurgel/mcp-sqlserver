@@ -654,7 +654,10 @@ def alterar_procedure(nome: str, script: str, backup_arquivo: str, banco: str = 
     texto_sem_strings = re.sub(r"'[^']*'", "", texto_limpo)
     if texto_sem_strings.strip().endswith(';'):
         texto_sem_strings = texto_sem_strings.strip()[:-1]
-    if ';' in texto_sem_strings:
+    # Permite ;WITH (CTE) e ; no final de bloco
+    texto_sem_with = re.sub(r';\s*WITH\b', 'WITH', texto_sem_strings, flags=re.IGNORECASE)
+    texto_sem_end = re.sub(r';\s*END\b', 'END', texto_sem_with, flags=re.IGNORECASE)
+    if ';' in texto_sem_end:
         return f"OPERACAO BLOQUEADA: Comandos encadeados (;) detectados fora de strings literais."
 
     # 6. Executa ALTER
