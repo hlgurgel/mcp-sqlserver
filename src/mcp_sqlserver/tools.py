@@ -640,25 +640,10 @@ def alterar_procedure(nome: str, script: str, backup_arquivo: str, banco: str = 
     except Exception as e:
         return f"ERRO ao verificar backup: {str(e)}"
 
-    # 5. Valida script ALTER
+    # 5. Valida script ALTER (apenas verifica se comeca com ALTER PROCEDURE)
     script_upper = script.strip().upper()
     if not script_upper.startswith("ALTER PROCEDURE") and not script_upper.startswith("ALTER PROC"):
         return "OPERACAO BLOQUEADA: O script deve comecar com ALTER PROCEDURE."
-
-    # Bloqueia multiplos comandos (; no mesmo nivel, fora de strings)
-    # Ignora ; que fazem parte do corpo da procedure
-    linhas_sem_comentario = [l for l in script.split('\n') 
-                             if not l.lstrip().startswith('--')]
-    texto_limpo = '\n'.join(linhas_sem_comentario)
-    # Remove conteudo entre aspas simples para nao pegar ; em strings
-    texto_sem_strings = re.sub(r"'[^']*'", "", texto_limpo)
-    if texto_sem_strings.strip().endswith(';'):
-        texto_sem_strings = texto_sem_strings.strip()[:-1]
-    # Permite ;WITH (CTE) e ; no final de bloco
-    texto_sem_with = re.sub(r';\s*WITH\b', 'WITH', texto_sem_strings, flags=re.IGNORECASE)
-    texto_sem_end = re.sub(r';\s*END\b', 'END', texto_sem_with, flags=re.IGNORECASE)
-    if ';' in texto_sem_end:
-        return f"OPERACAO BLOQUEADA: Comandos encadeados (;) detectados fora de strings literais."
 
     # 6. Executa ALTER
     cursor = conn.cursor()
