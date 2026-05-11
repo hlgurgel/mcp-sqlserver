@@ -69,7 +69,7 @@ def listar_bancos() -> str:
         cursor.close()
 
 
-def consulta(sql: str) -> str:
+def consulta(sql: str, timeout_segundos: int = 120) -> str:
     """Executa uma consulta SELECT (somente leitura).
 
     Use notacao de tres niveis para acessar outros bancos:
@@ -77,6 +77,7 @@ def consulta(sql: str) -> str:
 
     Args:
         sql: Query SQL do tipo SELECT.
+        timeout_segundos: Tempo maximo de execucao em segundos (default: 120).
     """
     sql_upper = sql.strip().upper()
     for palavra in _PALAVRAS_PROIBIDAS:
@@ -87,6 +88,7 @@ def consulta(sql: str) -> str:
         return "OPERACAO BLOQUEADA: Comandos encadeados (;) nao sao permitidos."
 
     conn = get_connection()
+    conn.timeout = timeout_segundos
     cursor = conn.cursor()
     try:
         cursor.execute(sql)
@@ -277,7 +279,7 @@ def ler_procedure(nome: str, banco: str = "") -> str:
         cursor.close()
 
 
-def executar_procedure(nome: str, banco: str = "", parametros: str = "") -> str:
+def executar_procedure(nome: str, banco: str = "", parametros: str = "", timeout_segundos: int = 120) -> str:
     """Executa uma stored procedure. Requer confirmacao explicita do usuario.
 
     IMPORTANTE: O usuario deve ser questionado antes de executar qualquer procedure.
@@ -288,6 +290,7 @@ def executar_procedure(nome: str, banco: str = "", parametros: str = "") -> str:
         nome: Nome da procedure. Use 'schema.nome' ou apenas 'nome'.
         banco: Nome do banco de dados (opcional).
         parametros: Parametros no formato SQL: 'valor1, valor2, @param=valor'.
+        timeout_segundos: Tempo maximo de execucao em segundos (default: 120).
     """
     if not _validar_identificador_sql(nome):
         return "OPERACAO BLOQUEADA: Nome de procedure invalido. Use apenas identificadores SQL validos (schema.procedure)."
@@ -301,6 +304,7 @@ def executar_procedure(nome: str, banco: str = "", parametros: str = "") -> str:
         sql = f"EXEC {nome}"
 
     conn = get_connection()
+    conn.timeout = timeout_segundos
     cursor = conn.cursor()
     try:
         if banco:
@@ -482,13 +486,13 @@ def status_jobs(nomes: str) -> str:
             ROW_NUMBER() OVER (
                 PARTITION BY job_id
                 ORDER BY
-                    start_execution_date DESC,
-                    CASE WHEN stop_execution_date IS NOT NULL THEN 0 ELSE 1 END
+                    CASE WHEN stop_execution_date IS NULL THEN 0 ELSE 1 END,
+                    start_execution_date DESC
             ) AS rn
         FROM msdb.dbo.sysjobactivity
         WHERE start_execution_date IS NOT NULL
     ),
-    ultimo_historico AS (
+    ultimo_historico_resumo AS (
         SELECT
             job_id,
             instance_id,
@@ -500,32 +504,58 @@ def status_jobs(nomes: str) -> str:
             ) AS rn
         FROM msdb.dbo.sysjobhistory
         WHERE step_id = 0
+    ),
+    ultimo_historico_step AS (
+        SELECT
+            job_id,
+            step_id,
+            step_name,
+            message,
+            ROW_NUMBER() OVER (
+                PARTITION BY job_id
+                ORDER BY instance_id DESC, step_id DESC
+            ) AS rn
+        FROM msdb.dbo.sysjobhistory
+        WHERE step_id > 0
     )
     SELECT
         j.name AS nome,
         FORMAT(ja.start_execution_date, 'yyyy-MM-ddTHH:mm:ss') AS inicio,
         FORMAT(ja.stop_execution_date, 'yyyy-MM-ddTHH:mm:ss') AS fim,
         DATEDIFF(MINUTE, ja.start_execution_date, ja.stop_execution_date) AS duracao_minutos,
-        CASE jh.run_status
-            WHEN 0 THEN 'FALHA'
-            WHEN 1 THEN 'SUCESSO'
-            WHEN 2 THEN 'TENTATIVA'
-            WHEN 3 THEN 'CANCELADO'
-            WHEN 4 THEN 'EM EXECUCAO'
-            ELSE 'DESCONHECIDO'
+        CASE
+            WHEN ja.stop_execution_date IS NULL AND ja.start_execution_date IS NOT NULL THEN 'EM EXECUCAO'
+            ELSE
+                CASE jh.run_status
+                    WHEN 0 THEN 'FALHA'
+                    WHEN 1 THEN 'SUCESSO'
+                    WHEN 2 THEN 'TENTATIVA'
+                    WHEN 3 THEN 'CANCELADO'
+                    ELSE 'DESCONHECIDO'
+                END
         END AS resultado,
         CASE
             WHEN ja.stop_execution_date IS NULL AND ja.start_execution_date IS NOT NULL THEN 1
             ELSE 0
         END AS em_execucao,
-        COALESCE(jh.message, 'Sem historico recente') AS mensagem
+        CASE
+            WHEN ja.stop_execution_date IS NULL AND ja.start_execution_date IS NOT NULL THEN
+                'Em execucao. Ultimo step registrado: ' +
+                CAST(COALESCE(jhs.step_id, 0) AS VARCHAR) +
+                ' (' + COALESCE(jhs.step_name, 'desconhecido') + ')'
+            ELSE
+                COALESCE(jh.message, 'Sem historico recente')
+        END AS mensagem
     FROM msdb.dbo.sysjobs j
     LEFT JOIN ultima_atividade ja
         ON j.job_id = ja.job_id
         AND ja.rn = 1
-    LEFT JOIN ultimo_historico jh
+    LEFT JOIN ultimo_historico_resumo jh
         ON j.job_id = jh.job_id
         AND jh.rn = 1
+    LEFT JOIN ultimo_historico_step jhs
+        ON j.job_id = jhs.job_id
+        AND jhs.rn = 1
     WHERE j.name IN ({placeholders})
     ORDER BY ja.start_execution_date
     """
@@ -569,6 +599,65 @@ def ler_funcao(nome: str, banco: str = "") -> str:
         return f"ERRO: {str(e)}"
     finally:
         cursor.close()
+
+
+def criar_indice(comando: str, banco: str = "") -> str:
+    """Executa um comando CREATE INDEX no SQL Server.
+
+    ATENCAO: O usuario DEVE ser questionado e confirmar antes de cada execucao.
+    Nunca crie indices sem permissao explicita.
+    Usa uma conexao dedicada com timeout de 10 minutos para indices grandes.
+
+    Args:
+        comando: Comando SQL CREATE INDEX completo.
+        banco: Nome do banco de dados onde criar o indice (opcional).
+    """
+    comando_upper = comando.strip().upper()
+
+    if "CREATE" not in comando_upper:
+        return "OPERACAO BLOQUEADA: Apenas comandos CREATE INDEX sao permitidos."
+
+    if "INDEX" not in comando_upper:
+        return "OPERACAO BLOQUEADA: Apenas comandos CREATE INDEX sao permitidos."
+
+    palavras_bloqueadas_ddl = [
+        "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE",
+        "EXEC", "EXECUTE", "GRANT", "REVOKE", "BACKUP", "RESTORE",
+        "DROP", "ALTER", "DBCC",
+    ]
+    for palavra in palavras_bloqueadas_ddl:
+        if re.search(r'\b' + palavra + r'\b', comando_upper):
+            return f"OPERACAO BLOQUEADA: '{palavra}' nao permitido em comandos de indice."
+
+    for char in [";", "--", "/*", "*/"]:
+        if char in comando:
+            return "OPERACAO BLOQUEADA: Caracteres especiais nao permitidos."
+
+    import pyodbc as _pyodbc
+    conn_str = get_connection_string()
+    conn = None
+    cursor = None
+    try:
+        conn = _pyodbc.connect(conn_str, timeout=600)
+        conn.timeout = 600
+        cursor = conn.cursor()
+        if banco:
+            cursor.execute(f"USE [{banco}]")
+        cursor.execute(comando)
+        conn.commit()
+        return "Comando executado com sucesso."
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return f"ERRO: {str(e)}"
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 def alterar_procedure(nome: str, script: str, backup_arquivo: str, banco: str = "") -> str:
@@ -710,3 +799,74 @@ def executar_update(sql: str) -> str:
         return f"ERRO: {str(e)}"
     finally:
         cursor.close()
+
+
+def executar_ddl(sql: str, backup_arquivo: str, banco: str = "", timeout_segundos: int = 600) -> str:
+    """Executa um comando DDL (ALTER TABLE, ALTER VIEW, DROP, CREATE, sp_update_jobstep, etc.)
+    com backup obrigatorio do script de reversao.
+
+    ATENCAO: O usuario DEVE ser questionado e confirmar antes de cada execucao.
+    Nunca execute DDL sem permissao explicita.
+
+    Args:
+        sql: Comando SQL DDL completo.
+        backup_arquivo: Caminho absoluto do arquivo onde sera salvo o script de reversao.
+        banco: Nome do banco de dados (opcional).
+        timeout_segundos: Tempo maximo de execucao em segundos (default: 600).
+    """
+    import os as _os
+    from datetime import datetime as _dt
+
+    # 1. Salva o backup (script de reversao fornecido pelo chamador)
+    if not backup_arquivo:
+        return "ERRO: Parametro 'backup_arquivo' e obrigatorio. Forneca o caminho para salvar o script de reversao."
+
+    try:
+        _os.makedirs(_os.path.dirname(backup_arquivo), exist_ok=True)
+        with open(backup_arquivo, "w", encoding="utf-8") as f:
+            f.write(f"-- Script de reversao\n")
+            f.write(f"-- Data: {_dt.now().isoformat()}\n")
+            f.write(f"-- Banco: {banco or _BANCO_PADRAO}\n")
+            f.write("-- ATENCAO: Execute este script para desfazer a operacao.\n")
+            f.write("-- ============================================================\n\n")
+            f.write(sql)
+    except Exception as e:
+        return f"ERRO ao salvar backup em '{backup_arquivo}': {str(e)}"
+
+    # 2. Verifica se o backup foi salvo corretamente
+    try:
+        tamanho_backup = _os.path.getsize(backup_arquivo)
+        if tamanho_backup < 30:
+            return f"ERRO: Verificacao de backup falhou. O arquivo '{backup_arquivo}' tem apenas {tamanho_backup} bytes."
+    except Exception as e:
+        return f"ERRO ao verificar backup: {str(e)}"
+
+    # 3. Executa o DDL com conexao dedicada
+    import pyodbc as _pyodbc
+    conn_str = get_connection_string()
+    conn = None
+    cursor = None
+    try:
+        conn = _pyodbc.connect(conn_str, timeout=timeout_segundos)
+        conn.timeout = timeout_segundos
+        cursor = conn.cursor()
+        if banco:
+            cursor.execute(f"USE [{banco}]")
+        cursor.execute(sql)
+        conn.commit()
+        return (
+            f"SUCESSO: Comando DDL executado com sucesso.\n"
+            f"Backup salvo em: {backup_arquivo} ({tamanho_backup} bytes)"
+        )
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return f"ERRO: {str(e)}\n\nBackup salvo em: {backup_arquivo} (use para reverter)"
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

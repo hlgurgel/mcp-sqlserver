@@ -29,6 +29,11 @@ async def listar_ferramentas():
                         "type": "string",
                         "description": "Query SQL do tipo SELECT.",
                     },
+                    "timeout_segundos": {
+                        "type": "integer",
+                        "description": "Tempo maximo de execucao em segundos (default: 120).",
+                        "default": 120,
+                    },
                 },
                 "required": ["sql"],
             },
@@ -149,6 +154,11 @@ async def listar_ferramentas():
                         "type": "string",
                         "description": "Parametros no formato SQL: 'valor1, valor2, @param=valor'.",
                         "default": "",
+                    },
+                    "timeout_segundos": {
+                        "type": "integer",
+                        "description": "Tempo maximo de execucao em segundos (default: 120).",
+                        "default": 120,
                     },
                 },
                 "required": ["nome"],
@@ -276,6 +286,28 @@ async def listar_ferramentas():
             },
         ),
         Tool(
+            name="criar_indice",
+            description="Executa um comando CREATE INDEX no SQL Server. "
+                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                        "Nunca crie indices sem permissao explicita. "
+                        "DML e DDL destrutivo (INSERT, UPDATE, DELETE, DROP, ALTER, etc.) sao bloqueados.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "comando": {
+                        "type": "string",
+                        "description": "Comando SQL CREATE INDEX completo.",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados onde criar o indice (opcional).",
+                        "default": "",
+                    },
+                },
+                "required": ["comando"],
+            },
+        ),
+        Tool(
             name="alterar_procedure",
             description="Altera uma stored procedure com backup previo do codigo original. "
                         "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
@@ -306,6 +338,38 @@ async def listar_ferramentas():
                 "required": ["nome", "script", "backup_arquivo"],
             },
         ),
+        Tool(
+            name="executar_ddl",
+            description="Executa um comando DDL (ALTER TABLE, ALTER VIEW, DROP, CREATE, "
+                        "sp_update_jobstep, etc.) com backup obrigatorio do script de reversao. "
+                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                        "Nunca execute DDL sem permissao explicita. "
+                        "O chamador e responsavel por montar o script de reversao adequado.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {
+                        "type": "string",
+                        "description": "Comando SQL DDL completo (ALTER TABLE, ALTER VIEW, DROP, CREATE, etc.).",
+                    },
+                    "backup_arquivo": {
+                        "type": "string",
+                        "description": "Caminho absoluto do arquivo onde sera salvo o script de reversao.",
+                    },
+                    "banco": {
+                        "type": "string",
+                        "description": "Nome do banco de dados (opcional).",
+                        "default": "",
+                    },
+                    "timeout_segundos": {
+                        "type": "integer",
+                        "description": "Tempo maximo de execucao em segundos (default: 600).",
+                        "default": 600,
+                    },
+                },
+                "required": ["sql", "backup_arquivo"],
+            },
+        ),
     ]
 
 
@@ -330,6 +394,8 @@ async def chamar_ferramenta(name: str, arguments: dict):
         "status_jobs": tools.status_jobs,
         "executar_update": tools.executar_update,
         "alterar_procedure": tools.alterar_procedure,
+        "criar_indice": tools.criar_indice,
+        "executar_ddl": tools.executar_ddl,
     }
 
     func = mapeamento.get(name)
