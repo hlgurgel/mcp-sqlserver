@@ -38,8 +38,20 @@ def get_connection_string() -> str:
 
 def get_connection():
     global _CONNECTION
+    conn_str = get_connection_string()
+    if _CONNECTION is not None:
+        try:
+            cursor = _CONNECTION.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            return _CONNECTION
+        except Exception:
+            try:
+                _CONNECTION.close()
+            except Exception:
+                pass
+            _CONNECTION = None
     if _CONNECTION is None:
-        conn_str = get_connection_string()
         _CONNECTION = pyodbc.connect(conn_str)
     return _CONNECTION
 
