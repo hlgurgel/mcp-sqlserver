@@ -491,6 +491,7 @@ def status_jobs(nomes: str) -> str:
             ) AS rn
         FROM msdb.dbo.sysjobactivity
         WHERE start_execution_date IS NOT NULL
+          AND session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity)
     ),
     ultimo_historico_resumo AS (
         SELECT
