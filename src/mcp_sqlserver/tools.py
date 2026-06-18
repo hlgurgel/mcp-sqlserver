@@ -279,6 +279,28 @@ def ler_procedure(nome: str, banco: str = "") -> str:
         cursor.close()
 
 
+def _extrair_erros_messages(cursor) -> list[str]:
+    """Extrai mensagens de erro do SQL Server a partir de cursor.messages.
+
+    O pyodbc armazena em cursor.messages todas as mensagens retornadas pelo
+    servidor, incluindo erros de runtime dentro de procedures que nao acionam
+    XACT_ABORT (ex: erros de collation, conversao implicita, etc.).
+    """
+    erros = []
+    for msg in cursor.messages:
+        if isinstance(msg, (list, tuple)) and len(msg) >= 2:
+            texto = str(msg[1])
+        else:
+            texto = str(msg)
+        if "[SQL Server]" not in texto:
+            continue
+        texto_limpo = texto.strip()
+        if "row" in texto_limpo.lower():
+            continue
+        erros.append(texto_limpo)
+    return erros
+
+
 def executar_procedure(nome: str, banco: str = "", parametros: str = "", timeout_segundos: int = 120) -> str:
     """Executa uma stored procedure. Requer confirmacao explicita do usuario.
 
@@ -310,6 +332,9 @@ def executar_procedure(nome: str, banco: str = "", parametros: str = "", timeout
         if banco:
             _definir_banco(cursor, banco)
         cursor.execute(sql)
+        erros_sql = _extrair_erros_messages(cursor)
+        if erros_sql:
+            return "ERRO: " + "; ".join(erros_sql)
         if cursor.description:
             return "RESULTADO:\n" + _format_resultado(cursor)
         else:
@@ -641,10 +666,19 @@ def criar_indice(comando: str, banco: str = "") -> str:
     try:
         conn = _pyodbc.connect(conn_str, timeout=600)
         conn.timeout = 600
+        conn.autocommit = False
         cursor = conn.cursor()
+        cursor.execute("SET XACT_ABORT ON")
         if banco:
             cursor.execute(f"USE [{banco}]")
         cursor.execute(comando)
+        erros_sql = _extrair_erros_messages(cursor)
+        if erros_sql:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return "ERRO: " + "; ".join(erros_sql)
         conn.commit()
         return "Comando executado com sucesso."
     except Exception as e:
@@ -740,6 +774,16 @@ def alterar_procedure(nome: str, script: str, backup_arquivo: str, banco: str = 
     try:
         _definir_banco(cursor, banco)
         cursor.execute(script)
+        erros_sql = _extrair_erros_messages(cursor)
+        if erros_sql:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return (
+                f"ERRO ao executar ALTER: {'; '.join(erros_sql)}\n\n"
+                f"Backup salvo em: {backup_arquivo} (use para restaurar)"
+            )
         conn.commit()
         return (
             f"SUCESSO: Procedure '{schema}.{nome_proc}' alterada com sucesso.\n"
@@ -789,6 +833,13 @@ def executar_update(sql: str) -> str:
     cursor = conn.cursor()
     try:
         cursor.execute(sql)
+        erros_sql = _extrair_erros_messages(cursor)
+        if erros_sql:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return "ERRO: " + "; ".join(erros_sql)
         conn.commit()
         linhas_afetadas = cursor.rowcount
         return f"UPDATE executado com sucesso. Linhas afetadas: {linhas_afetadas}"
@@ -850,10 +901,22 @@ def executar_ddl(sql: str, backup_arquivo: str, banco: str = "", timeout_segundo
     try:
         conn = _pyodbc.connect(conn_str, timeout=timeout_segundos)
         conn.timeout = timeout_segundos
+        conn.autocommit = False
         cursor = conn.cursor()
+        cursor.execute("SET XACT_ABORT ON")
         if banco:
             cursor.execute(f"USE [{banco}]")
         cursor.execute(sql)
+        erros_sql = _extrair_erros_messages(cursor)
+        if erros_sql:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return (
+                f"ERRO: {'; '.join(erros_sql)}\n"
+                f"Backup salvo em: {backup_arquivo} ({tamanho_backup} bytes)"
+            )
         conn.commit()
         return (
             f"SUCESSO: Comando DDL executado com sucesso.\n"

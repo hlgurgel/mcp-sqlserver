@@ -53,6 +53,10 @@ def get_connection():
             _CONNECTION = None
     if _CONNECTION is None:
         _CONNECTION = pyodbc.connect(conn_str)
+        _CONNECTION.autocommit = False
+        cursor = _CONNECTION.cursor()
+        cursor.execute("SET XACT_ABORT ON")
+        cursor.close()
     return _CONNECTION
 
 
