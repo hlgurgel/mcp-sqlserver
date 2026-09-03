@@ -334,6 +334,10 @@ def executar_procedure(nome: str, banco: str = "", parametros: str = "", timeout
         cursor.execute(sql)
         erros_sql = _extrair_erros_messages(cursor)
         if erros_sql:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             return "ERRO: " + "; ".join(erros_sql)
 
         resultados = []
@@ -345,15 +349,20 @@ def executar_procedure(nome: str, banco: str = "", parametros: str = "", timeout
             if not cursor.nextset():
                 break
 
+        conn.commit()
+
         if tem_resultados:
             if len(resultados) == 1:
                 return "RESULTADO:\n" + resultados[0]
             else:
                 return "RESULTADOS:\n\n" + "\n---\n".join(resultados)
         else:
-            conn.commit()
             return f"Procedure '{nome}' executada com sucesso (sem resultados)."
     except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return f"ERRO: {str(e)}"
     finally:
         cursor.close()
