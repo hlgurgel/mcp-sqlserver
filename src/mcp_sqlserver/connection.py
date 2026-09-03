@@ -65,3 +65,45 @@ def close_connection():
     if _CONNECTION is not None:
         _CONNECTION.close()
         _CONNECTION = None
+
+
+_PERMISSAO_ESCRITA_CACHE = None
+
+
+def usuario_tem_permissao_escrita() -> bool:
+    """Detecta se o usuario da conexao tem permissao de escrita no SQL Server.
+
+    Verifica roles de escrita no nivel do servidor (sysadmin) e no banco
+    padrao da conexao (db_owner, db_datawriter, db_ddladmin).
+
+    Fail-safe: se a deteccao falhar por qualquer motivo (banco inacessivel,
+    timeout, sem permissao ate para consultar roles), assume somente leitura
+    (retorna False), nunca expondo ferramentas de escrita por engano.
+
+    O resultado e cacheado na primeira chamada.
+    """
+    global _PERMISSAO_ESCRITA_CACHE
+    if _PERMISSAO_ESCRITA_CACHE is not None:
+        return _PERMISSAO_ESCRITA_CACHE
+
+    _PERMISSAO_ESCRITA_CACHE = False
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT "
+                "CAST(IS_SRVROLEMEMBER('sysadmin') AS BIT), "
+                "CAST(IS_MEMBER('db_owner') AS BIT), "
+                "CAST(IS_MEMBER('db_datawriter') AS BIT), "
+                "CAST(IS_MEMBER('db_ddladmin') AS BIT)"
+            )
+            row = cursor.fetchone()
+            if row:
+                _PERMISSAO_ESCRITA_CACHE = any(bool(v) for v in row)
+        finally:
+            cursor.close()
+    except Exception:
+        _PERMISSAO_ESCRITA_CACHE = False
+
+    return _PERMISSAO_ESCRITA_CACHE

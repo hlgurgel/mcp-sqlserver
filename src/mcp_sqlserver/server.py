@@ -5,17 +5,25 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool
 
 from . import tools
-from .connection import close_connection
+from .connection import close_connection, usuario_tem_permissao_escrita
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("mcp-sqlserver")
 
 servidor = Server("mcp-sqlserver")
 
+_NOMES_FERRAMENTAS_ESCRITA = {
+    "executar_procedure",
+    "executar_update",
+    "criar_indice",
+    "alterar_procedure",
+    "executar_ddl",
+}
+
 
 @servidor.list_tools()
 async def listar_ferramentas():
-    return [
+    ferramentas = [
         Tool(
             name="consulta",
             description="Executa uma consulta SELECT (somente leitura) no SQL Server. "
@@ -134,37 +142,6 @@ async def listar_ferramentas():
             },
         ),
         Tool(
-            name="executar_procedure",
-            description="Executa uma stored procedure. "
-                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
-                        "Nunca execute procedures sem permissao explicita.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "nome": {
-                        "type": "string",
-                        "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
-                    },
-                    "banco": {
-                        "type": "string",
-                        "description": "Nome do banco de dados (opcional).",
-                        "default": "",
-                    },
-                    "parametros": {
-                        "type": "string",
-                        "description": "Parametros no formato SQL: 'valor1, valor2, @param=valor'.",
-                        "default": "",
-                    },
-                    "timeout_segundos": {
-                        "type": "integer",
-                        "description": "Tempo maximo de execucao em segundos (default: 120).",
-                        "default": 120,
-                    },
-                },
-                "required": ["nome"],
-            },
-        ),
-        Tool(
             name="plano_execucao",
             description="Exibe o plano de execucao estimado para uma query, sem executa-la. "
                         "Util para analisar performance.",
@@ -268,114 +245,157 @@ async def listar_ferramentas():
                 "required": ["nomes"],
             },
         ),
-        Tool(
-            name="executar_update",
-            description="Executa um comando UPDATE no SQL Server. "
-                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
-                        "Nunca execute updates sem permissao explicita. "
-                        "A clausula WHERE e obrigatoria para evitar alteracoes em massa.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "sql": {
-                        "type": "string",
-                        "description": "Comando SQL UPDATE completo. Deve incluir clausula WHERE.",
-                    },
-                },
-                "required": ["sql"],
-            },
-        ),
-        Tool(
-            name="criar_indice",
-            description="Executa um comando CREATE INDEX no SQL Server. "
-                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
-                        "Nunca crie indices sem permissao explicita. "
-                        "DML e DDL destrutivo (INSERT, UPDATE, DELETE, DROP, ALTER, etc.) sao bloqueados.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "comando": {
-                        "type": "string",
-                        "description": "Comando SQL CREATE INDEX completo.",
-                    },
-                    "banco": {
-                        "type": "string",
-                        "description": "Nome do banco de dados onde criar o indice (opcional).",
-                        "default": "",
-                    },
-                },
-                "required": ["comando"],
-            },
-        ),
-        Tool(
-            name="alterar_procedure",
-            description="Altera uma stored procedure com backup previo do codigo original. "
-                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
-                        "Nunca altere procedures sem permissao explicita. "
-                        "Fluxo: 1) le o codigo atual, 2) salva backup no arquivo indicado, "
-                        "3) verifica o backup, 4) executa o ALTER PROCEDURE.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "nome": {
-                        "type": "string",
-                        "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
-                    },
-                    "script": {
-                        "type": "string",
-                        "description": "Script ALTER PROCEDURE completo.",
-                    },
-                    "backup_arquivo": {
-                        "type": "string",
-                        "description": "Caminho absoluto do arquivo onde sera salvo o backup do codigo original.",
-                    },
-                    "banco": {
-                        "type": "string",
-                        "description": "Nome do banco de dados (opcional).",
-                        "default": "",
-                    },
-                },
-                "required": ["nome", "script", "backup_arquivo"],
-            },
-        ),
-        Tool(
-            name="executar_ddl",
-            description="Executa um comando DDL (ALTER TABLE, ALTER VIEW, DROP, CREATE, "
-                        "sp_update_jobstep, etc.) com backup obrigatorio do script de reversao. "
-                        "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
-                        "Nunca execute DDL sem permissao explicita. "
-                        "O chamador e responsavel por montar o script de reversao adequado.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "sql": {
-                        "type": "string",
-                        "description": "Comando SQL DDL completo (ALTER TABLE, ALTER VIEW, DROP, CREATE, etc.).",
-                    },
-                    "backup_arquivo": {
-                        "type": "string",
-                        "description": "Caminho absoluto do arquivo onde sera salvo o script de reversao.",
-                    },
-                    "banco": {
-                        "type": "string",
-                        "description": "Nome do banco de dados (opcional).",
-                        "default": "",
-                    },
-                    "timeout_segundos": {
-                        "type": "integer",
-                        "description": "Tempo maximo de execucao em segundos (default: 600).",
-                        "default": 600,
-                    },
-                },
-                "required": ["sql", "backup_arquivo"],
-            },
-        ),
     ]
+
+    if usuario_tem_permissao_escrita():
+        ferramentas.extend([
+            Tool(
+                name="executar_procedure",
+                description="Executa uma stored procedure. "
+                            "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                            "Nunca execute procedures sem permissao explicita.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "nome": {
+                            "type": "string",
+                            "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
+                        },
+                        "banco": {
+                            "type": "string",
+                            "description": "Nome do banco de dados (opcional).",
+                            "default": "",
+                        },
+                        "parametros": {
+                            "type": "string",
+                            "description": "Parametros no formato SQL: 'valor1, valor2, @param=valor'.",
+                            "default": "",
+                        },
+                        "timeout_segundos": {
+                            "type": "integer",
+                            "description": "Tempo maximo de execucao em segundos (default: 120).",
+                            "default": 120,
+                        },
+                    },
+                    "required": ["nome"],
+                },
+            ),
+            Tool(
+                name="executar_update",
+                description="Executa um comando UPDATE no SQL Server. "
+                            "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                            "Nunca execute updates sem permissao explicita. "
+                            "A clausula WHERE e obrigatoria para evitar alteracoes em massa.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "sql": {
+                            "type": "string",
+                            "description": "Comando SQL UPDATE completo. Deve incluir clausula WHERE.",
+                        },
+                    },
+                    "required": ["sql"],
+                },
+            ),
+            Tool(
+                name="criar_indice",
+                description="Executa um comando CREATE INDEX no SQL Server. "
+                            "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                            "Nunca crie indices sem permissao explicita. "
+                            "DML e DDL destrutivo (INSERT, UPDATE, DELETE, DROP, ALTER, etc.) sao bloqueados.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "comando": {
+                            "type": "string",
+                            "description": "Comando SQL CREATE INDEX completo.",
+                        },
+                        "banco": {
+                            "type": "string",
+                            "description": "Nome do banco de dados onde criar o indice (opcional).",
+                            "default": "",
+                        },
+                    },
+                    "required": ["comando"],
+                },
+            ),
+            Tool(
+                name="alterar_procedure",
+                description="Altera uma stored procedure com backup previo do codigo original. "
+                            "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                            "Nunca altere procedures sem permissao explicita. "
+                            "Fluxo: 1) le o codigo atual, 2) salva backup no arquivo indicado, "
+                            "3) verifica o backup, 4) executa o ALTER PROCEDURE.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "nome": {
+                            "type": "string",
+                            "description": "Nome da procedure. Use 'schema.nome' ou apenas 'nome'.",
+                        },
+                        "script": {
+                            "type": "string",
+                            "description": "Script ALTER PROCEDURE completo.",
+                        },
+                        "backup_arquivo": {
+                            "type": "string",
+                            "description": "Caminho absoluto do arquivo onde sera salvo o backup do codigo original.",
+                        },
+                        "banco": {
+                            "type": "string",
+                            "description": "Nome do banco de dados (opcional).",
+                            "default": "",
+                        },
+                    },
+                    "required": ["nome", "script", "backup_arquivo"],
+                },
+            ),
+            Tool(
+                name="executar_ddl",
+                description="Executa um comando DDL (ALTER TABLE, ALTER VIEW, DROP, CREATE, "
+                            "sp_update_jobstep, etc.) com backup obrigatorio do script de reversao. "
+                            "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
+                            "Nunca execute DDL sem permissao explicita. "
+                            "O chamador e responsavel por montar o script de reversao adequado.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "sql": {
+                            "type": "string",
+                            "description": "Comando SQL DDL completo (ALTER TABLE, ALTER VIEW, DROP, CREATE, etc.).",
+                        },
+                        "backup_arquivo": {
+                            "type": "string",
+                            "description": "Caminho absoluto do arquivo onde sera salvo o script de reversao.",
+                        },
+                        "banco": {
+                            "type": "string",
+                            "description": "Nome do banco de dados (opcional).",
+                            "default": "",
+                        },
+                        "timeout_segundos": {
+                            "type": "integer",
+                            "description": "Tempo maximo de execucao em segundos (default: 600).",
+                            "default": 600,
+                        },
+                    },
+                    "required": ["sql", "backup_arquivo"],
+                },
+            ),
+        ])
+
+    return ferramentas
 
 
 @servidor.call_tool()
 async def chamar_ferramenta(name: str, arguments: dict):
     logger.info(f"Ferramenta chamada: {name} com argumentos: {arguments}")
+
+    if name in _NOMES_FERRAMENTAS_ESCRITA and not usuario_tem_permissao_escrita():
+        return [{
+            "type": "text",
+            "text": "OPERACAO BLOQUEADA: O usuario da conexao nao possui permissao de escrita no SQL Server.",
+        }]
 
     mapeamento = {
         "consulta": tools.consulta,
