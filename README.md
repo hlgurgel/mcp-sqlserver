@@ -1,8 +1,8 @@
 # mcp-sqlserver
 
-[![PyPI version](https://img.shields.io/pypi/v/mcp-sqlserver.svg)](https://pypi.org/project/mcp-sqlserver/)
+[![PyPI version](https://img.shields.io/pypi/v/sqlserver-mcp-tools.svg)](https://pypi.org/project/sqlserver-mcp-tools/)
 [![License: MIT](https://img.shields.io/github/license/hlgurgel/mcp-sqlserver.svg)](https://github.com/hlgurgel/mcp-sqlserver/blob/main/LICENSE)
-[![Python versions](https://img.shields.io/pypi/pyversions/mcp-sqlserver.svg)](https://pypi.org/project/mcp-sqlserver/)
+[![Python versions](https://img.shields.io/pypi/pyversions/sqlserver-mcp-tools.svg)](https://pypi.org/project/sqlserver-mcp-tools/)
 
 Servidor MCP (Model Context Protocol) para SQL Server, com controle de permissões
 e modo somente-leitura por padrão. Permite que agentes de IA (Claude, opencode e
@@ -31,13 +31,13 @@ outros clientes MCP) consultem e administrem bancos SQL Server de forma segura.
 Via PyPI:
 
 ```bash
-pip install mcp-sqlserver
+pip install sqlserver-mcp-tools
 ```
 
 Ou, sem instalar nada (executa direto do PyPI com cache):
 
 ```bash
-uvx mcp-sqlserver
+uvx --from sqlserver-mcp-tools mcp-sqlserver
 ```
 
 ## Configuração
@@ -65,7 +65,7 @@ Adicione ao `claude_desktop_config.json`:
   "mcpServers": {
     "mcp-sqlserver": {
       "command": "uvx",
-      "args": ["mcp-sqlserver"],
+      "args": ["--from", "sqlserver-mcp-tools", "mcp-sqlserver"],
       "env": {
         "MSSQL_CONNECTION_STRING": "DRIVER={ODBC Driver 18 for SQL Server};SERVER=...;DATABASE=...;UID=...;PWD=...;TrustServerCertificate=yes"
       }
