@@ -1,0 +1,18 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+startCommand:
+  type: stdio
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({command: 'uvx', args: ['--from', 'sqlserver-mcp-tools', 'mcp-sqlserver'], env: {MSSQL_CONNECTION_STRING: config.MSSQL_CONNECTION_STRING}})
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required: [MSSQL_CONNECTION_STRING]
+    properties:
+      MSSQL_CONNECTION_STRING:
+        type: string
+        description: String de conexão ODBC para o SQL Server
+  exampleConfig:
+    MSSQL_CONNECTION_STRING: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost;DATABASE=seu_banco;UID=seu_usuario;PWD=sua_senha;TrustServerCertificate=yes"
