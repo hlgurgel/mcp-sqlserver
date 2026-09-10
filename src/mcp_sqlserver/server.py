@@ -5,7 +5,11 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool
 
 from . import tools
-from .connection import close_connection, usuario_tem_permissao_escrita
+from .connection import (
+    close_connection,
+    connection_string_configurada,
+    usuario_tem_permissao_escrita,
+)
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("mcp-sqlserver")
@@ -422,7 +426,20 @@ async def chamar_ferramenta(name: str, arguments: dict):
     if func is None:
         return [{"type": "text", "text": f"Ferramenta desconhecida: {name}"}]
 
-    resultado = func(**arguments)
+    if not connection_string_configurada():
+        return [{
+            "type": "text",
+            "text": (
+                "CONEXAO NAO CONFIGURADA: Defina a variavel de ambiente "
+                "MSSQL_CONNECTION_STRING (ou MSSQL_ENV_FILE apontando para um "
+                ".env) no ambiente do servidor antes de usar as ferramentas."
+            ),
+        }]
+
+    try:
+        resultado = func(**arguments)
+    except Exception as e:
+        resultado = f"ERRO: {str(e)}"
     return [{"type": "text", "text": resultado}]
 
 

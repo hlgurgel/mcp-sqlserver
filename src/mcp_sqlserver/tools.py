@@ -1,15 +1,30 @@
 import json
 import re
-from .connection import get_connection, get_connection_string
+from .connection import conectar_pyodbc, get_connection, get_connection_string
 
 MAX_ROWS = 2000
 
 _BANCO_PADRAO = "master"
-_conn_str = get_connection_string()
-for _parte in _conn_str.split(";"):
-    if _parte.strip().upper().startswith("DATABASE="):
-        _BANCO_PADRAO = _parte.split("=", 1)[1].strip()
-        break
+
+
+def _descobrir_banco_padrao() -> str:
+    """Obtem o banco padrao a partir da string de conexao, sem falhar no
+    import caso a conexao ainda nao esteja configurada.
+
+    Permite que o servidor suba mesmo sem conexao definida (fail-lazy),
+    reportando o erro apenas quando uma ferramenta for de fato chamada.
+    """
+    try:
+        conn_str = get_connection_string()
+    except Exception:
+        return "master"
+    for parte in conn_str.split(";"):
+        if parte.strip().upper().startswith("DATABASE="):
+            return parte.split("=", 1)[1].strip()
+    return "master"
+
+
+_BANCO_PADRAO = _descobrir_banco_padrao()
 
 
 def _validar_identificador_sql(nome: str) -> bool:
@@ -681,12 +696,11 @@ def criar_indice(comando: str, banco: str = "") -> str:
         if char in comando:
             return "OPERACAO BLOQUEADA: Caracteres especiais nao permitidos."
 
-    import pyodbc as _pyodbc
     conn_str = get_connection_string()
     conn = None
     cursor = None
     try:
-        conn = _pyodbc.connect(conn_str, timeout=600)
+        conn = conectar_pyodbc(conn_str, timeout=600)
         conn.timeout = 600
         conn.autocommit = False
         cursor = conn.cursor()
@@ -916,12 +930,11 @@ def executar_ddl(sql: str, backup_arquivo: str, banco: str = "", timeout_segundo
         return f"ERRO ao verificar backup: {str(e)}"
 
     # 3. Executa o DDL com conexao dedicada
-    import pyodbc as _pyodbc
     conn_str = get_connection_string()
     conn = None
     cursor = None
     try:
-        conn = _pyodbc.connect(conn_str, timeout=timeout_segundos)
+        conn = conectar_pyodbc(conn_str, timeout=timeout_segundos)
         conn.timeout = timeout_segundos
         conn.autocommit = False
         cursor = conn.cursor()

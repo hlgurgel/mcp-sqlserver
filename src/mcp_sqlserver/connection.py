@@ -36,6 +36,43 @@ def get_connection_string() -> str:
     return _CONNECTION_STRING
 
 
+def connection_string_configurada() -> bool:
+    """Indica se a string de conexao esta configurada, sem levantar excecao."""
+    return bool(_CONNECTION_STRING)
+
+
+_PADROES_ERRO_DRIVER = [
+    "can't open lib",
+    "file not found",
+    "data source name not found",
+    "no default driver",
+    "im002",
+    "sqlallochandle",
+]
+
+
+def _eh_erro_driver_odbc(mensagem: str) -> bool:
+    m = mensagem.lower()
+    return any(padrao in m for padrao in _PADROES_ERRO_DRIVER)
+
+
+def conectar_pyodbc(conn_str: str, timeout: int = None):
+    """Abre uma conexao pyodbc, traduzindo erro de driver ODBC ausente em
+    uma mensagem clara para o usuario/LLM."""
+    try:
+        if timeout is None:
+            return pyodbc.connect(conn_str)
+        return pyodbc.connect(conn_str, timeout=timeout)
+    except Exception as e:
+        if _eh_erro_driver_odbc(str(e)):
+            raise RuntimeError(
+                "DRIVER ODBC NAO ENCONTRADO: instale o 'ODBC Driver 18 for SQL Server' "
+                "e reinicie o servidor (macOS: brew install msodbcsql18). "
+                "Erro original: " + str(e)
+            ) from e
+        raise
+
+
 def get_connection():
     global _CONNECTION
     conn_str = get_connection_string()
@@ -52,7 +89,7 @@ def get_connection():
                 pass
             _CONNECTION = None
     if _CONNECTION is None:
-        _CONNECTION = pyodbc.connect(conn_str)
+        _CONNECTION = conectar_pyodbc(conn_str)
         _CONNECTION.autocommit = False
         cursor = _CONNECTION.cursor()
         cursor.execute("SET XACT_ABORT ON")
