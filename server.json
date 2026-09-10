@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hlgurgel/sqlserver",
+  "title": "SQL Server",
+  "description": "Servidor MCP para SQL Server com controle de permissões e modo somente-leitura",
+  "repository": {
+    "url": "https://github.com/hlgurgel/mcp-sqlserver",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "sqlserver-mcp-tools",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MSSQL_CONNECTION_STRING",
+          "description": "String de conexão ODBC para o SQL Server",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

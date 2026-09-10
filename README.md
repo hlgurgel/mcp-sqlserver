@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/github/license/hlgurgel/mcp-sqlserver.svg)](https://github.com/hlgurgel/mcp-sqlserver/blob/main/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/sqlserver-mcp-tools.svg)](https://pypi.org/project/sqlserver-mcp-tools/)
 
+<!-- mcp-name: io.github.hlgurgel/sqlserver -->
+
 Servidor MCP (Model Context Protocol) para SQL Server, com controle de permissões
 e modo somente-leitura por padrão. Permite que agentes de IA (Claude, opencode e
 outros clientes MCP) consultem e administrem bancos SQL Server de forma segura.
