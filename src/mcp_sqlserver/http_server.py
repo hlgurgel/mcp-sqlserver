@@ -72,13 +72,22 @@ def criar_app():
     """Monta a aplicacao Starlette com o transporte Streamable HTTP em /mcp."""
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
     from starlette.routing import Route
 
     session_manager = StreamableHTTPSessionManager(app=servidor, json_response=True)
 
     return Starlette(
         routes=[Route("/mcp", endpoint=_StreamableHTTPASGIApp(session_manager))],
-        middleware=[Middleware(_HealthCheckMiddleware)],
+        middleware=[
+            Middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_methods=["*"],
+                allow_headers=["*"],
+            ),
+            Middleware(_HealthCheckMiddleware),
+        ],
         lifespan=lambda app: session_manager.run(),
     )
 
