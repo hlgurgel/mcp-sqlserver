@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sqlserver-mcp-tools"
-version = "0.1.5"
+version = "0.1.6"
 description = "Servidor MCP (Model Context Protocol) para SQL Server com controle de permissões e modo somente-leitura"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -69,16 +69,32 @@ class _HealthCheckMiddleware:
 
 
 def criar_app():
-    """Monta a aplicacao Starlette com o transporte Streamable HTTP em /mcp."""
+    """Monta a aplicacao Starlette com Streamable HTTP (/mcp) e SSE (/sse)."""
+    from mcp.server.sse import SseServerTransport
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.cors import CORSMiddleware
-    from starlette.routing import Route
+    from starlette.responses import Response
+    from starlette.routing import Mount, Route
 
     session_manager = StreamableHTTPSessionManager(app=servidor, json_response=True)
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(
+            request.scope, request.receive, request._send
+        ) as streams:
+            await servidor.run(
+                streams[0], streams[1], servidor.create_initialization_options()
+            )
+        return Response()
 
     return Starlette(
-        routes=[Route("/mcp", endpoint=_StreamableHTTPASGIApp(session_manager))],
+        routes=[
+            Route("/mcp", endpoint=_StreamableHTTPASGIApp(session_manager)),
+            Route("/sse", endpoint=handle_sse),
+            Mount("/messages", app=sse.handle_post_message),
+        ],
         middleware=[
             Middleware(
                 CORSMiddleware,
