@@ -125,6 +125,38 @@ Alternativa: apontar para um arquivo `.env` local, mantendo a senha fora do JSON
 }
 ```
 
+## Servidor HTTP (Streamable HTTP)
+
+Além do modo local (stdio), o servidor pode ser executado como um **MCP remoto**
+via Streamable HTTP, expondo o endpoint `/mcp`. Instale com o extra `server`:
+
+```bash
+pip install 'sqlserver-mcp-tools[server]'
+```
+
+Inicie o servidor:
+
+```bash
+MSSQL_CONNECTION_STRING="DRIVER={ODBC Driver 18 for SQL Server};SERVER=...;DATABASE=...;UID=...;PWD=...;TrustServerCertificate=yes" \
+  mcp-sqlserver-http
+```
+
+Opcionalmente, ajuste host/porta com `MCP_HOST` (padrão `0.0.0.0`) e `MCP_PORT`
+(padrão `8090`). O endpoint MCP fica em `http://<host>:<porta>/mcp`.
+
+Para consumir remotamente no opencode:
+
+```json
+{
+  "mcp": {
+    "sqlserver": {
+      "type": "remote",
+      "url": "http://10.177.51.228:8090/mcp"
+    }
+  }
+}
+```
+
 ## Ferramentas disponíveis
 
 Somente leitura (sempre disponíveis):
