@@ -35,15 +35,50 @@ class _StreamableHTTPASGIApp:
         await self.session_manager.handle_request(scope, receive, send)
 
 
+class _HealthCheckMiddleware:
+    """Responde 200 OK a um GET simples no /mcp (sem Accept text/event-stream).
+
+    Clientes como o Claude Desktop validam a URL com um GET simples (como um
+    navegador). O transport Streamable HTTP rejeita esse GET com 406, fazendo o
+    cliente concluir que "nenhum servidor respondeu". Este middleware intercepta
+    esses GETs e devolve um health check JSON, deixando passar apenas GETs que
+    de fato querem abrir um stream SSE (Accept: text/event-stream).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and scope["method"] == "GET"
+            and scope["path"] == "/mcp"
+        ):
+            headers = {k.decode().lower(): v.decode() for k, v in scope["headers"]}
+            accept = headers.get("accept", "")
+            if "text/event-stream" not in accept:
+                body = b'{"status":"ok"}'
+                await send({
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [[b"content-type", b"application/json"]],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
+
+
 def criar_app():
     """Monta a aplicacao Starlette com o transporte Streamable HTTP em /mcp."""
     from starlette.applications import Starlette
+    from starlette.middleware import Middleware
     from starlette.routing import Route
 
-    session_manager = StreamableHTTPSessionManager(app=servidor)
+    session_manager = StreamableHTTPSessionManager(app=servidor, json_response=True)
 
     return Starlette(
         routes=[Route("/mcp", endpoint=_StreamableHTTPASGIApp(session_manager))],
+        middleware=[Middleware(_HealthCheckMiddleware)],
         lifespan=lambda app: session_manager.run(),
     )
 
