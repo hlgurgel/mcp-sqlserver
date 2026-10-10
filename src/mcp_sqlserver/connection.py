@@ -1,4 +1,5 @@
 import os
+import struct
 from pathlib import Path
 import pyodbc
 from dotenv import load_dotenv
@@ -56,13 +57,56 @@ def _eh_erro_driver_odbc(mensagem: str) -> bool:
     return any(padrao in m for padrao in _PADROES_ERRO_DRIVER)
 
 
+# Tipo ODBC do SQL Server para DATETIMEOFFSET (SQL_SS_TIMESTAMPOFFSET).
+# O pyodbc nao suporta nativamente esse tipo e falha com
+# "ODBC SQL type -155 is not yet supported". Registramos um output converter
+# na conexao para decodificar o buffer binario (SQL_SS_TIMESTAMPOFFSET_STRUCT).
+_SQL_SS_TIMESTAMPOFFSET = -155
+
+
+def _converter_timestampoffset(raw):
+    """Decodifica o buffer do SQL_SS_TIMESTAMPOFFSET (odbc tipo -155) em uma
+    string 'YYYY-MM-DD HH:MM:SS.fffffff +HH:MM'.
+
+    Estrutura de 20 bytes (little-endian):
+        SQLSMALLINT  year;             SQLUSMALLINT month, day, hour, minute, second;
+        SQLUINTEGER  fraction;         // nanossegundos
+        SQLSMALLINT  timezone_hour;    SQLSMALLINT timezone_minute;
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, (bytes, bytearray)) or len(raw) != 20:
+        # Layout inesperado: devolve como esta, sem quebrar a consulta.
+        return raw
+    year, month, day, hour, minute, second, fraction, tz_hour, tz_minute = struct.unpack(
+        "<hHHHHHihh", raw
+    )
+    frac7 = fraction // 100  # nanossegundos -> 100ns (7 digitos)
+    sinal = "-" if (tz_hour < 0 or tz_minute < 0) else "+"
+    return (
+        f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}."
+        f"{frac7:07d} {sinal}{abs(tz_hour):02d}:{abs(tz_minute):02d}"
+    )
+
+
+def _registrar_converters(conn) -> None:
+    """Registra output converters para tipos ODBC nao suportados nativamente
+    pelo pyodbc (ex.: datetimeoffset / -155)."""
+    try:
+        conn.add_output_converter(_SQL_SS_TIMESTAMPOFFSET, _converter_timestampoffset)
+    except Exception:
+        # Nunca impede a conexao por falha ao registrar o converter.
+        pass
+
+
 def conectar_pyodbc(conn_str: str, timeout: int = None):
     """Abre uma conexao pyodbc, traduzindo erro de driver ODBC ausente em
     uma mensagem clara para o usuario/LLM."""
     try:
         if timeout is None:
-            return pyodbc.connect(conn_str)
-        return pyodbc.connect(conn_str, timeout=timeout)
+            conn = pyodbc.connect(conn_str)
+        else:
+            conn = pyodbc.connect(conn_str, timeout=timeout)
     except Exception as e:
         if _eh_erro_driver_odbc(str(e)):
             raise RuntimeError(
@@ -71,6 +115,8 @@ def conectar_pyodbc(conn_str: str, timeout: int = None):
                 "Erro original: " + str(e)
             ) from e
         raise
+    _registrar_converters(conn)
+    return conn
 
 
 def get_connection():
