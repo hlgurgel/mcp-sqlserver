@@ -357,10 +357,14 @@ async def listar_ferramentas():
             Tool(
                 name="executar_ddl",
                 description="Executa um comando DDL (ALTER TABLE, ALTER VIEW, DROP, CREATE, "
-                            "sp_update_jobstep, etc.) com backup obrigatorio do script de reversao. "
+                            "sp_update_jobstep, etc.) com backup do script de reversao. "
                             "ATENCAO: o usuario DEVE ser questionado e confirmar antes de cada execucao. "
                             "Nunca execute DDL sem permissao explicita. "
-                            "O chamador e responsavel por montar o script de reversao adequado.",
+                            "O arquivo 'backup_arquivo' recebe o script de reversao real (nunca o "
+                            "proprio comando executado): usa 'script_reversao' quando informado; "
+                            "senao auto-captura a definicao anterior de objetos de modulo "
+                            "(ALTER/CREATE OR ALTER/DROP de VIEW/PROCEDURE/FUNCTION/TRIGGER); "
+                            "caso contrario grava apenas um aviso de que nao ha reversao automatica.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -370,7 +374,7 @@ async def listar_ferramentas():
                         },
                         "backup_arquivo": {
                             "type": "string",
-                            "description": "Caminho absoluto do arquivo onde sera salvo o script de reversao.",
+                            "description": "Caminho absoluto do arquivo onde sera salvo o script de reversao real.",
                         },
                         "banco": {
                             "type": "string",
@@ -381,6 +385,12 @@ async def listar_ferramentas():
                             "type": "integer",
                             "description": "Tempo maximo de execucao em segundos (default: 600).",
                             "default": 600,
+                        },
+                        "script_reversao": {
+                            "type": "string",
+                            "description": "Conteudo do script de reversao (opcional). Quando informado, "
+                                           "tem prioridade sobre a auto-captura.",
+                            "default": "",
                         },
                     },
                     "required": ["sql", "backup_arquivo"],

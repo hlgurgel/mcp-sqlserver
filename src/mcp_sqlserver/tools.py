@@ -889,39 +889,132 @@ def executar_update(sql: str) -> str:
         cursor.close()
 
 
-def executar_ddl(sql: str, backup_arquivo: str, banco: str = "", timeout_segundos: int = 600) -> str:
+_PADRAO_OBJETO_DDL = re.compile(
+    r"\b(?:ALTER|CREATE\s+OR\s+ALTER|DROP)\s+"
+    r"(VIEW|PROCEDURE|PROC|FUNCTION|TRIGGER)\s+"
+    r"(?:(\[[^\]]+\]|\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_$#]*)\s*\.\s*)?"
+    r"(\[[^\]]+\]|\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_$#]*)",
+    re.IGNORECASE,
+)
+
+
+def _limpar_identificador(ident: str) -> str:
+    return ident.strip().strip("[]\"").strip()
+
+
+def _capturar_definicao_objetos(sql: str, banco: str = "") -> str:
+    """Le a definicao atual (OBJECT_DEFINITION) dos objetos de modulo alvo de um
+    DDL (ALTER / CREATE OR ALTER / DROP de VIEW, PROCEDURE, FUNCTION ou TRIGGER).
+
+    Usada para montar automaticamente o script de reversao ANTES da execucao.
+    Retorna '' quando o DDL nao aponta para objeto de modulo ou quando nenhum
+    objeto existente e encontrado (ex.: CREATE de objeto novo).
+    """
+    alvos = []
+    for m in _PADRAO_OBJETO_DDL.finditer(sql):
+        tipo = m.group(1).upper()
+        schema = _limpar_identificador(m.group(2)) if m.group(2) else "dbo"
+        nome = _limpar_identificador(m.group(3))
+        alvo = f"{schema}.{nome}"
+        if alvo not in [a for a, _ in alvos]:
+            alvos.append((alvo, tipo))
+    if not alvos:
+        return ""
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    partes = []
+    try:
+        if banco:
+            _definir_banco(cursor, banco)
+        for alvo, tipo in alvos:
+            cursor.execute("SELECT OBJECT_DEFINITION(OBJECT_ID(?))", (alvo,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                partes.append(
+                    f"-- Reversao ({tipo}): definicao anterior de {alvo}\n{row[0]}"
+                )
+    except Exception:
+        return ""
+    finally:
+        cursor.close()
+    return "\nGO\n\n".join(partes)
+
+
+def executar_ddl(
+    sql: str,
+    backup_arquivo: str,
+    banco: str = "",
+    timeout_segundos: int = 600,
+    script_reversao: str = "",
+) -> str:
     """Executa um comando DDL (ALTER TABLE, ALTER VIEW, DROP, CREATE, sp_update_jobstep, etc.)
-    com backup obrigatorio do script de reversao.
+    com backup do script de reversao.
 
     ATENCAO: O usuario DEVE ser questionado e confirmar antes de cada execucao.
     Nunca execute DDL sem permissao explicita.
+
+    O arquivo 'backup_arquivo' recebe o script de reversao real, NUNCA o proprio
+    comando executado. A origem do conteudo e, nesta ordem:
+      1. o parametro 'script_reversao' (quando informado pelo chamador);
+      2. a definicao anterior do objeto (auto-captura via OBJECT_DEFINITION),
+         quando o DDL for de modulo (ALTER/CREATE OR ALTER/DROP de
+         VIEW/PROCEDURE/FUNCTION/TRIGGER);
+      3. caso contrario, o arquivo recebe apenas um AVISO de que nao ha reversao
+         automatica (e a mensagem de retorno sinaliza isso).
 
     Args:
         sql: Comando SQL DDL completo.
         backup_arquivo: Caminho absoluto do arquivo onde sera salvo o script de reversao.
         banco: Nome do banco de dados (opcional).
         timeout_segundos: Tempo maximo de execucao em segundos (default: 600).
+        script_reversao: Conteudo do script de reversao (opcional). Quando
+            informado, tem prioridade sobre a auto-captura.
     """
     import os as _os
     from datetime import datetime as _dt
 
-    # 1. Salva o backup (script de reversao fornecido pelo chamador)
     if not backup_arquivo:
         return "ERRO: Parametro 'backup_arquivo' e obrigatorio. Forneca o caminho para salvar o script de reversao."
 
+    banco_alvo = banco or _BANCO_PADRAO
+
+    # 1. Determina o conteudo do script de reversao ANTES de executar o DDL.
+    conteudo = (script_reversao or "").strip()
+    if conteudo:
+        origem = "fornecido pelo chamador (script_reversao)"
+        tem_reversao = True
+    else:
+        conteudo = _capturar_definicao_objetos(sql, banco).strip()
+        if conteudo:
+            origem = "auto-captura (OBJECT_DEFINITION anterior)"
+            tem_reversao = True
+        else:
+            origem = "indisponivel"
+            tem_reversao = False
+
+    # 2. Grava o arquivo de backup (nunca grava o SQL de entrada como reversao).
     try:
-        _os.makedirs(_os.path.dirname(backup_arquivo), exist_ok=True)
+        _os.makedirs(_os.path.dirname(backup_arquivo) or ".", exist_ok=True)
         with open(backup_arquivo, "w", encoding="utf-8") as f:
-            f.write(f"-- Script de reversao\n")
+            f.write("-- Script de reversao\n")
             f.write(f"-- Data: {_dt.now().isoformat()}\n")
-            f.write(f"-- Banco: {banco or _BANCO_PADRAO}\n")
-            f.write("-- ATENCAO: Execute este script para desfazer a operacao.\n")
-            f.write("-- ============================================================\n\n")
-            f.write(sql)
+            f.write(f"-- Banco: {banco_alvo}\n")
+            f.write(f"-- Origem: {origem}\n")
+            if tem_reversao:
+                f.write("-- ATENCAO: Execute este script para desfazer a operacao.\n")
+                f.write("-- ============================================================\n\n")
+                f.write(conteudo if conteudo.endswith("\n") else conteudo + "\n")
+            else:
+                f.write("-- AVISO: NENHUM script de reversao automatico foi gerado.\n")
+                f.write("-- Este arquivo NAO contem reversao e NAO desfaz a operacao.\n")
+                f.write("-- Forneca o parametro 'script_reversao' ou crie o backup\n")
+                f.write("-- do objeto/estrutura na base antes de executar.\n")
+                f.write("-- ============================================================\n")
     except Exception as e:
         return f"ERRO ao salvar backup em '{backup_arquivo}': {str(e)}"
 
-    # 2. Verifica se o backup foi salvo corretamente
+    # 3. Verifica se o backup foi salvo corretamente
     try:
         tamanho_backup = _os.path.getsize(backup_arquivo)
         if tamanho_backup < 30:
@@ -929,7 +1022,19 @@ def executar_ddl(sql: str, backup_arquivo: str, banco: str = "", timeout_segundo
     except Exception as e:
         return f"ERRO ao verificar backup: {str(e)}"
 
-    # 3. Executa o DDL com conexao dedicada
+    if tem_reversao:
+        sufixo = (
+            f"Backup de reversao salvo em: {backup_arquivo} "
+            f"({tamanho_backup} bytes, origem: {origem})"
+        )
+    else:
+        sufixo = (
+            f"AVISO: nenhum script de reversao automatico. '{backup_arquivo}' "
+            f"contem apenas o aviso e NAO reverte a operacao. "
+            f"Forneca o parametro 'script_reversao' para um backup confiavel."
+        )
+
+    # 4. Executa o DDL com conexao dedicada
     conn_str = get_connection_string()
     conn = None
     cursor = None
@@ -948,22 +1053,16 @@ def executar_ddl(sql: str, backup_arquivo: str, banco: str = "", timeout_segundo
                 conn.rollback()
             except Exception:
                 pass
-            return (
-                f"ERRO: {'; '.join(erros_sql)}\n"
-                f"Backup salvo em: {backup_arquivo} ({tamanho_backup} bytes)"
-            )
+            return f"ERRO: {'; '.join(erros_sql)}\n{sufixo}"
         conn.commit()
-        return (
-            f"SUCESSO: Comando DDL executado com sucesso.\n"
-            f"Backup salvo em: {backup_arquivo} ({tamanho_backup} bytes)"
-        )
+        return f"SUCESSO: Comando DDL executado com sucesso.\n{sufixo}"
     except Exception as e:
         if conn:
             try:
                 conn.rollback()
             except Exception:
                 pass
-        return f"ERRO: {str(e)}\n\nBackup salvo em: {backup_arquivo} (use para reverter)"
+        return f"ERRO: {str(e)}\n\n{sufixo}"
     finally:
         if cursor:
             cursor.close()
